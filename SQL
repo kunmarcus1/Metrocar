@@ -1,0 +1,96 @@
+-- Count of unique users who downloaded the app
+WITH downloads AS (
+    SELECT
+        COUNT(DISTINCT app_download_key) AS user_app_download
+    FROM metrocar
+),
+-- Count of total users signed up
+totals AS (
+    SELECT
+        COUNT(DISTINCT user_id) AS total_users_signed_up
+    FROM signups
+),
+-- Count of users who requested a ride
+user_ride_status AS (
+    SELECT
+        COUNT(DISTINCT user_id) AS total_users_ride_requested
+    FROM ride_requests
+),
+-- Count of users whose ride request was accepted
+ride_acceptance AS (
+    SELECT
+        COUNT(DISTINCT user_id) AS total_users_ride_accepted
+    FROM ride_requests
+    WHERE accept_ts IS NOT NULL
+),
+-- Count of users who began a ride
+ride AS (
+    SELECT
+        COUNT(DISTINCT user_id) AS total_users_ride
+    FROM ride_requests
+    WHERE pickup_ts IS NOT NULL
+),
+-- Count of users who made a payment
+payment AS (
+    SELECT
+        COUNT(DISTINCT user_id) AS total_paid_users
+    FROM metrocar
+    WHERE charge_status = 'Approved'
+),
+-- Count of users who left a review
+review AS (
+    SELECT
+        COUNT(DISTINCT user_id) AS user_review
+    FROM reviews
+),
+-- Combining the counts into a funnel with respective steps
+funnel_stages AS (
+    SELECT
+        1 AS funnel_step,
+        'downloads' AS funnel_name,
+        user_app_download AS value
+    FROM downloads
+    UNION
+    SELECT
+        2 AS funnel_step,
+        'signups' AS funnel_name,
+        total_users_signed_up AS value
+    FROM totals
+    UNION
+    SELECT
+        3 AS funnel_step,
+        'ride_requested' AS funnel_name,
+        total_users_ride_requested AS value
+    FROM user_ride_status
+    UNION
+    SELECT
+        4 AS funnel_step,
+        'driver_accepted' AS funnel_name,
+        total_users_ride_accepted AS value
+    FROM ride_acceptance
+    UNION
+    SELECT
+        5 AS funnel_step,
+        'ride_begin' AS funnel_name,
+        total_users_ride AS value
+    FROM ride
+    UNION
+    SELECT
+        6 AS funnel_step,
+        'payment_approved' AS funnel_name,
+        total_paid_users AS value
+    FROM payment
+    UNION
+    SELECT
+        7 AS funnel_step,
+        'user_review' AS funnel_name,
+        user_review AS value
+    FROM review
+)
+-- Calculate conversion rates from the previous step in the funnel
+SELECT *,
+    (CAST(100.0 * value::float / LAG(value) OVER (
+        ORDER BY funnel_step
+    ) AS numeric(10, 2)) || '%') AS conversion_from_previous_step
+FROM funnel_stages
+ORDER BY funnel_step;
